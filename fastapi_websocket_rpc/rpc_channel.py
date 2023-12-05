@@ -3,7 +3,7 @@ Definition for an RPC channel protocol on top of a websocket -
 enabling bi-directional request/response interactions
 """
 import asyncio
-from inspect import _empty, getmembers, ismethod, signature
+from inspect import _empty, signature
 from typing import Any, Dict, List
 
 from pydantic import ValidationError
@@ -75,40 +75,54 @@ class RpcPromise:
 
 
 class RpcProxy:
-    """
-    Helper class
-    provide a __call__ interface for an RPC method over a given channel
-    """
+    """Provides a proxy to a remote method on the other side of the channel."""
 
-    def __init__(self, channel, method_name) -> None:
-        self.method_name = method_name
+    def __init__(self, channel, method_name: str) -> None:
         self.channel = channel
+        self.method_name = method_name
 
-    def __call__(self, **kwds: Any) -> Any:
-        return self.channel.call(self.method_name, args=kwds)
+    def __call__(self, **kwargs: Any) -> Any:
+        """Calls the remote method with the given keyword arguments.
+
+        Parameters
+        ----------
+        kwargs : dict
+            Keyword arguments to pass to the remote method.
+
+        Returns
+        -------
+        Any
+            Return value of the remote method.
+        """
+        logger.debug("Calling RPC method: %s", self.method_name)
+        return self.channel.call(self.method_name, args=kwargs)
 
 
 class RpcCaller:
-    """
-    Helper class provide an object (aka other) with callable methods for each
-    remote method on the otherside
-    """
+    """Calls remote methods on the other side of the channel."""
 
-    def __init__(self, channel, methods=None) -> None:
+    def __init__(self, channel: "RpcChannel", methods=None) -> None:
         self._channel = channel
-        self._method_names = (
-            [method[0] for method in getmembers(methods, lambda i: ismethod(i))]
-            if methods is not None
-            else None
-        )
 
     def __getattribute__(self, name: str):
-        if (not name.startswith("_") or name in EXPOSED_BUILT_IN_METHODS) and (
-            self._method_names is None or name in self._method_names
-        ):
+        """Returns an :class:`~fastapi_websocket_rpc.rpc_channel.RpcProxy` instance
+        for exposed RPC methods.
+
+        Parameters
+        ----------
+        name : str
+            Name of the requested attribute (or RPC method).
+
+        Returns
+        -------
+        Any
+            Attribute or RPC method.
+        """
+        is_exposed = not name.startswith("_") or name in EXPOSED_BUILT_IN_METHODS
+        if is_exposed:
+            logger.debug("%s was detected to be a remote RPC method.", name)
             return RpcProxy(self._channel, name)
-        else:
-            return super().__getattribute__(name)
+        return super().__getattribute__(name)
 
 
 # Callback signatures
@@ -157,6 +171,7 @@ class RpcChannel:
             channel id, helps to identify connections, cost a bit networking time.
                 Defaults to False - i.e. not getting the other side channel id
         """
+        logger.debug("Initializing RPC channel...")
         self.methods = methods._copy_()
         # allow methods to access channel (for recursive calls - e.g. call me as
         # a response for me calling you)
@@ -189,6 +204,7 @@ class RpcChannel:
 
         # any other kwarg goes straight to channel context (Accessible to methods)
         self._context = kwargs or {}
+        logger.debug("RPC channel initialized.")
 
     @property
     def context(self) -> Dict[str, Any]:
@@ -241,11 +257,8 @@ class RpcChannel:
         return await self._closed.wait()
 
     async def on_message(self, data):
-        """
-        Handle an incoming RPC message
-        This is the main function servers/clients using the channel need to
-        call (upon reading a message on the wire)
-        """
+        """Handle an incoming RPC message."""
+        logger.debug(f"Processing received message: {data}")
         try:
             message = pydantic_parse(RpcMessage, data)
             if message.request is not None:
@@ -298,6 +311,7 @@ class RpcChannel:
         Run all callbacks from self._connect_handlers
         """
         if self._sync_channel_id:
+            logger.debug("Syncing channel ID...")
             self._get_other_channel_id_task = asyncio.create_task(
                 self._get_other_channel_id()
             )
@@ -310,19 +324,20 @@ class RpcChannel:
         to identify a connection without this sync
         """
         if self._other_channel_id is None:
+            logger.debug("No cached channel ID found, calling _get_channel_id_()...")
             other_channel_id = await self.other._get_channel_id_()
             self._other_channel_id = (
                 other_channel_id.result
                 if other_channel_id and other_channel_id.result
                 else None
             )
+            logger.debug("Got channel ID: %s", self._other_channel_id)
             if self._other_channel_id is None:
                 raise RemoteValueError()
             # update asyncio event that we received remote channel id
             self._channel_id_synced.set()
             return self._other_channel_id
-        else:
-            return self._other_channel_id
+        return self._other_channel_id
 
     async def on_disconnect(self):
         # disconnect happened - mark the channel as closed
@@ -342,9 +357,7 @@ class RpcChannel:
         """
         # TODO add exception support (catch exceptions and pass to other side
         # as response with errors)
-        logger.debug(
-            "Handling RPC request - %s", {"request": message, "channel": self.id}
-        )
+        logger.debug(f"Handling RPC request on channel {self.id}: {message}")
         method_name = message.method
         # Ignore "_" prefixed methods (except the built in "_ping_")
         if isinstance(method_name, str) and (
@@ -448,12 +461,12 @@ class RpcChannel:
             override only with true UUIDs
         """
         call_id = call_id or gen_uid()
-        msg = RpcMessage(
+        message = RpcMessage(
             request=RpcRequest(method=name, arguments=args, call_id=call_id)
         )
-        logger.debug("Calling RPC method - %s", {"message": msg})
-        await self.send(msg)
-        promise = self.requests[msg.request.call_id] = RpcPromise(msg.request)
+        logger.debug("Sending the following RPC message: %s", message)
+        await self.send(message)
+        promise = self.requests[message.request.call_id] = RpcPromise(message.request)
         return promise
 
     async def call(self, name, args={}, timeout=DEFAULT_TIMEOUT):
