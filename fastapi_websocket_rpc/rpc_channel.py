@@ -373,6 +373,11 @@ class RpcChannel:
                     if result_type is str and not isinstance(result, str):
                         result = str(result)
                     response = RpcMessage(
+                        request=RpcRequest(
+                            method=method_name,
+                            arguments=message.arguments,
+                            call_id=message.call_id,
+                        ),
                         response=RpcResponse[result_type](
                             call_id=message.call_id,
                             result=result,
@@ -381,7 +386,7 @@ class RpcChannel:
                                 "__name__",
                                 getattr(result_type, "_name", "unknown-type"),
                             ),
-                        )
+                        ),
                     )
                     await self.send(response)
 
