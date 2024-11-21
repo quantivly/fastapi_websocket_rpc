@@ -28,6 +28,7 @@ class SimpleWebSocket(ABC):
 class JsonSerializingWebSocket(SimpleWebSocket):
     def __init__(self, websocket: SimpleWebSocket):
         self._websocket = websocket
+        self.message = None
 
     def _serialize(self, message):
         return pydantic_serialize(message)
@@ -43,7 +44,13 @@ class JsonSerializingWebSocket(SimpleWebSocket):
         logger.debug("Waiting for message...")
         message = await self._websocket.recv()
         logger.debug(f"Received message: {message}")
+        self.message = message
         return self._deserialize(message)
+
+    async def receive_text(self):
+        if self.message is None:
+            return None
+        return self._deserialize(self.message)
 
     async def close(self, code: int = 1000):
         await self._websocket.close(code)
