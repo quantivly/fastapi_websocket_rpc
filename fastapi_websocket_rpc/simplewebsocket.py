@@ -58,9 +58,8 @@ class JsonSerializingWebSocket(SimpleWebSocket):
         return message
 
     async def receive_text(self):
-        if self.messages is None:
-            return None
-        return self.messages
+        if self.messages is not None:
+            return self.messages
 
     async def close(self, code: int = 1000):
         await self._websocket.close(code)
