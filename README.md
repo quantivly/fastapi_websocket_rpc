@@ -42,8 +42,8 @@ pip install fastapi_ws_rpc
 Say the server exposes an "add" method, e.g. :
 ```python
 class RpcCalculator(RpcMethodsBase):
-    async def add(self, a, b):
-        return a + b
+  async def add(self, a, b):
+    return a + b
 ```
 Calling it is as easy as calling the method under the client's "other" property:
 ```python
