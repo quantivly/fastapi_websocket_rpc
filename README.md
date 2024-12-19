@@ -42,8 +42,8 @@ pip install fastapi_ws_rpc
 Say the server exposes an "add" method, e.g. :
 ```python
 class RpcCalculator(RpcMethodsBase):
-  async def add(self, a, b):
-    return a + b
+    async def add(self, a, b):
+        return a + b
 ```
 Calling it is as easy as calling the method under the client's "other" property:
 ```python
@@ -67,8 +67,8 @@ from fastapi_ws_rpc import RpcMethodsBase, WebsocketRPCEndpoint
 
 # Methods to expose to the clients
 class ConcatServer(RpcMethodsBase):
-  async def concat(self, a="", b=""):
-    return a + b
+    async def concat(self, a="", b=""):
+        return a + b
 
 
 # Init the FAST-API app
@@ -89,11 +89,11 @@ from fastapi_ws_rpc import RpcMethodsBase, WebSocketRpcClient
 
 
 async def run_client(uri):
-  async with WebSocketRpcClient(uri, RpcMethodsBase()) as client:
-    # call concat on the other side
-    response = await client.other.concat(a="hello", b=" world")
-    # print result
-    print(response.result)  # will print "hello world"
+    async with WebSocketRpcClient(uri, RpcMethodsBase()) as client:
+        # call concat on the other side
+        response = await client.other.concat(a="hello", b=" world")
+        # print result
+        print(response.result)  # will print "hello world"
 
 
 # run the client until it completes interaction with server
